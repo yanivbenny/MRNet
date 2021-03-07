@@ -22,6 +22,5 @@ Code for "Scale-Localized Abstract Reasoning" [paper](https://github.com/yanivbe
 ## Code
 Code and models will be uploaded soon.
 
-## Pretrained models
-Download the pretrained models for PGM and RAVEN-FAIR:
-https://drive.google.com/drive/folders/1ss1ZSSZ3SOH7O8vrqUw4jeAkxYuiYmTx?usp=sharing
+## Pretrained models 
+Download the pretrained models for PGM and RAVEN-FAIR [here](https://drive.google.com/drive/folders/1ss1ZSSZ3SOH7O8vrqUw4jeAkxYuiYmTx?usp=sharing).
