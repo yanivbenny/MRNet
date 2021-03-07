@@ -7,7 +7,7 @@ import torch.optim as optim
 from tqdm import tqdm
 
 import criteria
-import report_acc_regime
+from report_acc_regime import init_acc_regime, update_acc_regime
 
 torch.backends.cudnn.benchmark = True
 
@@ -66,7 +66,7 @@ class Trainer:
         print('Building model')
         params = args.__dict__
         print(args)
-        params['num_meta'] = 9 if self.args.dataset.startswith('RAVEN') else 12
+        params['num_meta'] = 9 if 'RAVEN' in self.args.dataset else 12
         self.use_meta = 0 if args.meta_beta == 0 else params['num_meta']
 
         assert args.model_name == 'mrnet'
@@ -185,10 +185,7 @@ class Trainer:
         acc_avg = 0.0
         acc_multihead_avg = [0.0] * 3
 
-        if self.args.dataset.startswith('RAVEN'):
-            acc_regime = report_acc_regime.init_acc_regime_raven()
-        else:
-            acc_regime = report_acc_regime.init_acc_regime_pgm()
+        acc_regime = init_acc_regime(self.args.dataset)
 
         for batch_data in tqdm(self.validloader, f'Valid epoch {epoch}'):
             counter += 1
@@ -224,10 +221,7 @@ class Trainer:
                     acc_multihead_avg[i] += x.item()
 
             if acc_regime is not None:
-                if self.args.dataset.startswith('RAVEN'):
-                    report_acc_regime.update_acc_regime_raven(acc_regime, model_output, target, data_file)
-                else:
-                    report_acc_regime.update_acc_regime_pgm(acc_regime, model_output, target, structure_encoded)
+                update_acc_regime(self.args.dataset, acc_regime, model_output, target, structure_encoded, data_file)
 
         if counter > 0:
             if self.use_meta:
@@ -258,10 +252,7 @@ class Trainer:
         acc_avg = 0.0
         acc_multihead_avg = [0.0] * 3
 
-        if self.args.dataset.startswith('RAVEN'):
-            acc_regime = report_acc_regime.init_acc_regime_raven()
-        else:
-            acc_regime = report_acc_regime.init_acc_regime_pgm()
+        acc_regime = init_acc_regime(self.args.dataset)
 
         for batch_data in tqdm(self.testloader, f'Test epoch {epoch}'):
             counter += 1
@@ -297,10 +288,7 @@ class Trainer:
                     acc_multihead_avg[i] += x.item()
 
             if acc_regime is not None:
-                if self.args.dataset.startswith('RAVEN'):
-                    report_acc_regime.update_acc_regime_raven(acc_regime, model_output, target, data_file)
-                else:
-                    report_acc_regime.update_acc_regime_pgm(acc_regime, model_output, target, structure_encoded)
+                update_acc_regime(self.args.dataset, acc_regime, model_output, target, structure_encoded, data_file)
 
         if counter > 0:
             if self.use_meta:
@@ -331,10 +319,7 @@ class Trainer:
         acc_avg = 0.0
         acc_multihead_avg = [0.0] * 3
 
-        if self.args.dataset.startswith('RAVEN'):
-            acc_regime = report_acc_regime.init_acc_regime_raven()
-        else:
-            acc_regime = report_acc_regime.init_acc_regime_pgm()
+        acc_regime = init_acc_regime(self.args.dataset)
 
         if subset == 'train':
             loader = self.trainloader
@@ -376,10 +361,7 @@ class Trainer:
                     acc_multihead_avg[i] += x.item()
 
             if acc_regime is not None:
-                if self.args.dataset.startswith('RAVEN'):
-                    report_acc_regime.update_acc_regime_raven(acc_regime, model_output, target, data_file)
-                else:
-                    report_acc_regime.update_acc_regime_pgm(acc_regime, model_output, target, structure_encoded)
+                update_acc_regime(self.args.dataset, acc_regime, model_output, target, structure_encoded, data_file)
 
         if counter > 0:
             if self.use_meta:

@@ -7,7 +7,7 @@ import numpy as np
 import torch
 
 parser = argparse.ArgumentParser(description='baseline')
-parser.add_argument('--testname', type=str, default='debug')
+parser.add_argument('--testname', type=str, default=None)
 parser.add_argument('--debug', action='store_true')
 parser.add_argument('--dataset', type=str, default=None)
 parser.add_argument('--regime', type=str, default=None)
@@ -20,15 +20,12 @@ parser.add_argument('--img_size', type=int, default=80)
 
 parser.add_argument('--seed', type=int, default=12345)
 parser.add_argument('--model_name', type=str, default='mrnet')
-parser.add_argument('--g_func', type=str, default='conv')
 parser.add_argument('--r_func', type=str, default='dist')
 parser.add_argument('--contrast', dest='contrast', action='store_true')
 parser.add_argument('--levels', type=str, default='111')
 parser.add_argument('--dropout', dest='dropout', action='store_true')
 parser.add_argument('--no_rc', dest='row_col', action='store_false')
 parser.add_argument('--relu_bf', dest='relu_before_reduce', action='store_true')
-parser.add_argument('--short', dest='short', action='store_true')
-parser.add_argument('--big', dest='big', action='store_true')
 
 parser.add_argument('--epochs', type=int, default=-1)
 parser.add_argument('--device', type=int, default=0)
@@ -51,7 +48,6 @@ parser.add_argument('--test', action='store_true')
 parser.add_argument('--multihead', action='store_true')
 parser.add_argument('--multihead_mode', type=str, default=None)
 parser.add_argument('--multihead_w', type=float, default=1.)
-parser.add_argument('--modular', action='store_true')
 
 
 def check_paths(args):
@@ -85,7 +81,9 @@ def main(args):
 
     from trainer import Trainer
     trainer = Trainer(args)
-    if args.test:
+    if not args.test:
+        trainer.main()
+    else:
         for subset in ['val', 'test']:
             loss, acc, acc_regime = trainer.evaluate(subset)
             print(f'{subset} loss: {loss} - accuracy: {acc}')
@@ -96,12 +94,13 @@ def main(args):
                         print(f'{key}: {val:.3f}')
                     else:
                         print(f'{key}: {val}')
-    else:
-        trainer.main()
 
 
 if __name__ == "__main__":
     args = parser.parse_args()
+
+    if args.testname is None:
+        args.testname = args.dataset
 
     main(args)
     print(f"script: {sys.argv[0]}")

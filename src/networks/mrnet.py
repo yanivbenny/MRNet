@@ -23,8 +23,7 @@ class Reshape(nn.Module):
 
 class MRNet(nn.Module):
     def __init__(self, use_meta=False, row_col=True, dropout=False, do_contrast=False, force_bias=False,
-                 relu_before_reduce=False, reduce_func='sum', levels='111', short=False, big=False,
-                 multihead=False, modular=False):
+                 relu_before_reduce=False, reduce_func='sum', levels='111', multihead=False):
         super(MRNet, self).__init__()
         self.use_meta = use_meta
         self.do_contrast = do_contrast
@@ -32,8 +31,6 @@ class MRNet(nn.Module):
         self.levels = levels
         print(f'CONTRAST: {self.do_contrast}')
         print(f'LEVELS: {self.levels}')
-
-        assert not (big and short)
 
         if dropout:
             _dropout = {
@@ -88,33 +85,18 @@ class MRNet(nn.Module):
             nn.ReLU(inplace=True)
             )
 
-        self.modular = modular
-        if not self.modular:
-            self.g_function_high = nn.Sequential(Reshape(shape=(-1, 3 * self.high_dim, 20, 20)),
-                                                 conv3x3(3 * self.high_dim, self.high_dim),
-                                                 ResBlock(self.high_dim, self.high_dim),
-                                                 ResBlock(self.high_dim, self.high_dim))
-            self.g_function_mid = nn.Sequential(Reshape(shape=(-1, 3 * self.mid_dim, 5, 5)),
-                                                conv3x3(3 * self.mid_dim, self.mid_dim),
-                                                ResBlock(self.mid_dim, self.mid_dim),
-                                                ResBlock(self.mid_dim, self.mid_dim))
-            self.g_function_low = nn.Sequential(Reshape(shape=(-1, 3 * self.low_dim, 1, 1)),
-                                                conv1x1(3 * self.low_dim, self.low_dim),
-                                                ResBlock1x1(self.low_dim, self.low_dim),
-                                                ResBlock1x1(self.low_dim, self.low_dim))
-        else:
-            self.g_function_high = nn.Sequential(Reshape(shape=(-1, 3 * self.high_dim, 20, 20)),
-                                                 ResBlock(3 * self.high_dim, 3 * self.high_dim),
-                                                 ResBlock(3 * self.high_dim, 3 * self.high_dim),
-                                                 conv1x1(3 * self.high_dim, self.high_dim))
-            self.g_function_mid = nn.Sequential(Reshape(shape=(-1, 3 * self.mid_dim, 5, 5)),
-                                                ResBlock(3 * self.mid_dim, 3 * self.mid_dim),
-                                                ResBlock(3 * self.mid_dim, 3 * self.mid_dim),
-                                                conv1x1(3 * self.mid_dim, self.mid_dim))
-            self.g_function_low = nn.Sequential(Reshape(shape=(-1, 3 * self.low_dim, 1, 1)),
-                                                ResBlock1x1(3 * self.low_dim, 3 * self.low_dim),
-                                                ResBlock1x1(3 * self.low_dim, 3 * self.low_dim),
-                                                conv1x1(3 * self.low_dim, self.low_dim))
+        self.g_function_high = nn.Sequential(Reshape(shape=(-1, 3 * self.high_dim, 20, 20)),
+                                             conv3x3(3 * self.high_dim, self.high_dim),
+                                             ResBlock(self.high_dim, self.high_dim),
+                                             ResBlock(self.high_dim, self.high_dim))
+        self.g_function_mid = nn.Sequential(Reshape(shape=(-1, 3 * self.mid_dim, 5, 5)),
+                                            conv3x3(3 * self.mid_dim, self.mid_dim),
+                                            ResBlock(self.mid_dim, self.mid_dim),
+                                            ResBlock(self.mid_dim, self.mid_dim))
+        self.g_function_low = nn.Sequential(Reshape(shape=(-1, 3 * self.low_dim, 1, 1)),
+                                            conv1x1(3 * self.low_dim, self.low_dim),
+                                            ResBlock1x1(self.low_dim, self.low_dim),
+                                            ResBlock1x1(self.low_dim, self.low_dim))
 
         self.reduce_func = reduce_func
 
@@ -197,33 +179,14 @@ class MRNet(nn.Module):
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
 
         self.mlp_dim = self.mlp_dim_high + self.mlp_dim_mid + self.mlp_dim_low
-        if short:
-            self.mlp = nn.Sequential(nn.Linear(self.mlp_dim, 256, bias=False),
-                                     nn.BatchNorm1d(256),
-                                     nn.ReLU(inplace=True),
-                                     nn.Linear(256, 1, bias=True))
-        elif big:
-            self.mlp = nn.Sequential(nn.Linear(self.mlp_dim, 512, bias=False),
-                                     nn.BatchNorm1d(512),
-                                     nn.ReLU(inplace=True),
-                                     nn.Dropout(_dropout['mlp']),
-                                     nn.Linear(512, 256, bias=False),
-                                     nn.BatchNorm1d(256),
-                                     nn.ReLU(inplace=True),
-                                     nn.Dropout(_dropout['mlp']),
-                                     nn.Linear(256, 128, bias=False),
-                                     nn.BatchNorm1d(128),
-                                     nn.ReLU(inplace=True),
-                                     nn.Linear(128, 1, bias=True))
-        else:
-            self.mlp = nn.Sequential(nn.Linear(self.mlp_dim, 256, bias=False),
-                                     nn.BatchNorm1d(256),
-                                     nn.ReLU(inplace=True),
-                                     nn.Dropout(_dropout['mlp']),
-                                     nn.Linear(256, 128, bias=False),
-                                     nn.BatchNorm1d(128),
-                                     nn.ReLU(inplace=True),
-                                     nn.Linear(128, 1, bias=True))
+        self.mlp = nn.Sequential(nn.Linear(self.mlp_dim, 256, bias=False),
+                                 nn.BatchNorm1d(256),
+                                 nn.ReLU(inplace=True),
+                                 nn.Dropout(_dropout['mlp']),
+                                 nn.Linear(256, 128, bias=False),
+                                 nn.BatchNorm1d(128),
+                                 nn.ReLU(inplace=True),
+                                 nn.Linear(128, 1, bias=True))
 
         if use_meta:
             self.mlp_meta = nn.Sequential(nn.Linear(self.mlp_dim, 256, bias=False),

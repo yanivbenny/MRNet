@@ -21,13 +21,13 @@ def get_data(data_root, dataname, image_size,
              batch_size=None, drop_last=True, num_workers=0, ratio=None, shuffle=True, flip=False, permute=False):
 
     # Load real dataset
-    if dataname.startswith('PGM'):
+    if 'PGM' in dataname:
         from .pgm_dataset import PGMDataset
         dataset = PGMDataset(get_data_path(data_root, dataname), None,
                              dataset_type=dataset_type, regime=regime, subset=subset,
                              image_size=image_size, transform=None, flip=flip, permute=permute)
 
-    if dataname.startswith('RAVEN'):
+    if 'RAVEN' in dataname:
         from .raven_dataset import RAVENDataset
         dataset = RAVENDataset(get_data_path(data_root, dataname), None,
                                dataset_type=dataset_type, subset=subset,

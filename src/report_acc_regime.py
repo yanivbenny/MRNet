@@ -1,6 +1,20 @@
 import os
 
 
+def init_acc_regime(dataname):
+    if 'RAVEN' in dataname:
+        return init_acc_regime_raven()
+    else:
+        return init_acc_regime_pgm()
+
+
+def update_acc_regime(dataname, acc_regime, model_output, target, structure_encoded, data_file):
+    if 'RAVEN' in dataname:
+        update_acc_regime_raven(acc_regime, model_output, target, data_file)
+    else:
+        update_acc_regime_pgm(acc_regime, model_output, target, structure_encoded)
+
+
 def init_acc_regime_raven():
     acc_regime = {"center_single": [0, 0],
                   "distribute_four": [0, 0],
