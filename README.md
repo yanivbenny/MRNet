@@ -16,7 +16,7 @@ Code for "Scale-Localized Abstract Reasoning" [paper](https://github.com/yanivbe
 ## Data
 * [PGM](https://github.com/deepmind/abstract-reasoning-matrices)
 * [RAVEN](https://github.com/WellyZhang/RAVEN)
-* [RAVEN-FAIR](https://github.com/yanivbenny/RAVEN_FAIR) (Balanced version of RAVEN)
+* [RAVEN-FAIR](https://github.com/yanivbenny/RAVEN_FAIR) (Our new version of RAVEN)
 
 
 ## Code
