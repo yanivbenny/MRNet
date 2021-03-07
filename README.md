@@ -20,7 +20,12 @@ Code for "Scale-Localized Abstract Reasoning" [paper](https://github.com/yanivbe
 
 
 ## Code
-Code and models will be uploaded soon.
+To reproduce the results, run:
+1. First training \
+`$ CUDA_VISIBLE_DEVICES=0 python train.py --dataset <DATASET> --path <PATH-TO-DATASETS> --wd <WD> --multihead`
+2. When first training is done \
+`$ CUDA_VISIBLE_DEVICES=0 python train.py --dataset <DATASET> --path <PATH-TO-DATASETS> --wd <WD> --recovery --multihead --multihead_mode eprob`
+* For PGM use WD=1e-6. For RAVEN-like use WD=1e-5.
 
 ## Pretrained models 
 Download the pretrained models for PGM and RAVEN-FAIR [here](https://drive.google.com/drive/folders/1ss1ZSSZ3SOH7O8vrqUw4jeAkxYuiYmTx?usp=sharing).
