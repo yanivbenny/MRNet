@@ -1,5 +1,9 @@
 # MRNet - Multi-scale Reasoning Network
-Code for "Scale-Localized Abstract Reasoning" [paper](https://github.com/yanivbenny/MRNet).
+Official repository for:
+
+Yaniv Benny, Niv Pekar, Lior Wolf. **"Scale-Localized Abstract Reasoning"**. CVPR 2021.
+
+[paper](https://github.com/yanivbenny/MRNet).
 
 ![architecture](images/architecture.png)
 
@@ -29,3 +33,19 @@ To reproduce the results, run:
 
 ## Pretrained models 
 Download the pretrained models for PGM and RAVEN-FAIR [here](https://drive.google.com/drive/folders/1ss1ZSSZ3SOH7O8vrqUw4jeAkxYuiYmTx?usp=sharing).
+
+## Citation
+We thank you for showing interest in our work. 
+If our work was beneficial for you, please consider citing us using:
+
+```
+@inproceedings{benny2021scale,
+  title={Scale-localized abstract reasoning},
+  author={Benny, Yaniv and Pekar, Niv and Wolf, Lior},
+  booktitle={Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition},
+  pages={12557--12565},
+  year={2021}
+}
+```
+
+If you have any question, please feel free to contact us.
