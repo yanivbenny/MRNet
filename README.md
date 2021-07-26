@@ -1,9 +1,7 @@
 # MRNet - Multi-scale Reasoning Network
 Official repository for:
 
-Yaniv Benny, Niv Pekar, Lior Wolf. **"Scale-Localized Abstract Reasoning"**. CVPR 2021.
-
-[paper](https://github.com/yanivbenny/MRNet).
+Yaniv Benny, Niv Pekar, Lior Wolf. [**"Scale-Localized Abstract Reasoning"**](https://openaccess.thecvf.com/content/CVPR2021/papers/Benny_Scale-Localized_Abstract_Reasoning_CVPR_2021_paper.pdf). CVPR 2021.
 
 ![architecture](images/architecture.png)
 
