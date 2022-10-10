@@ -1,12 +1,17 @@
 import os
 import pickle
+import shutil
 
 import numpy as np
 import torch
 import torch.optim as optim
+import yaml
+from torch import nn
 from tqdm import tqdm
 
 import criteria
+from data.data_utils import get_data
+from networks.mrnet import MRNet
 from report_acc_regime import init_acc_regime, update_acc_regime
 
 torch.backends.cudnn.benchmark = True
@@ -19,64 +24,64 @@ def renormalize(images):
 class Trainer:
     def __init__(self, args):
         self.args = args
-        self.args.cuda = torch.cuda.is_available()
-        torch.cuda.set_device(self.args.device)
+
+        if self.args.recovery:
+            self.args.seed += 1
         np.random.seed(self.args.seed)
         torch.manual_seed(self.args.seed)
-        if self.args.cuda:
-            torch.cuda.manual_seed(self.args.seed)
+        torch.cuda.manual_seed(self.args.seed)
 
-        test_path = os.path.join('.', 'results', self.args.testname)
-        self.save_path = os.path.join(test_path, 'save')
-        self.log_path = os.path.join(test_path, 'log')
+        experiment_dir = os.path.join(self.args.exp_dir, self.args.exp_name)
+        self.save_path = os.path.join(experiment_dir, 'save')
+        self.log_path = os.path.join(experiment_dir, 'log')
 
-        if args.recovery:
-            assert os.path.isdir(test_path), 'Recovery directory (' + test_path + ') does not exist'
+        if self.args.recovery:
+            assert os.path.isdir(experiment_dir), 'Recovery directory (' + experiment_dir + ') does not exist'
             print('Recovering an existing run')
         else:
-            if os.path.isdir(test_path):
-                print(f'Removing existing save directory at {test_path}')
-                import shutil
-                shutil.rmtree(test_path)
+            if os.path.isdir(experiment_dir):
+                print(f'Removing existing save directory at {experiment_dir}')
+                shutil.rmtree(experiment_dir)
 
-            print(f'Creating new save directory at {test_path}')
+            print(f'Creating new save directory at {experiment_dir}')
             os.makedirs(self.save_path)
             os.makedirs(self.log_path)
 
-            import yaml
             cfg_file = os.path.join(self.save_path, 'cfg.yml')
             with open(cfg_file, 'w') as f:
                 yaml.dump(args.__dict__, f, default_flow_style=False)
 
         print('Loading datasets')
-        from data.data_utils import get_data
-        self.trainloader = get_data(self.args.path, self.args.dataset, self.args.img_size,
-                                    dataset_type="train", regime=self.args.regime, subset=self.args.subset,
+        self.trainloader = get_data(self.args.data_dir, self.args.dataset, self.args.img_size,
+                                    use_cache=self.args.use_cache, save_cache=self.args.save_cache,
+                                    split="train", regime=self.args.regime, subset=self.args.subset,
                                     batch_size=self.args.batch_size, drop_last=True, num_workers=self.args.num_workers,
-                                    ratio=self.args.ratio, shuffle=True)
-        self.validloader = get_data(self.args.path, self.args.dataset, self.args.img_size,
-                                    dataset_type="val", regime=self.args.regime, subset=self.args.subset,
-                                    batch_size=self.args.batch_size, drop_last=True, num_workers=self.args.num_workers,
-                                    ratio=self.args.ratio, shuffle=False)
-        self.testloader = get_data(self.args.path, self.args.dataset, self.args.img_size,
-                                   dataset_type="test", regime=self.args.regime, subset=self.args.subset,
-                                   batch_size=self.args.batch_size, drop_last=True, num_workers=self.args.num_workers,
-                                   ratio=self.args.ratio, shuffle=False)
+                                    ratio=self.args.ratio, shuffle=True, flip=self.args.flip)
+        self.validloader = get_data(self.args.data_dir, self.args.dataset, self.args.img_size,
+                                    use_cache=self.args.use_cache, save_cache=self.args.save_cache,
+                                    split="val", regime=self.args.regime, subset=self.args.subset,
+                                    batch_size=self.args.batch_size, drop_last=False, num_workers=self.args.num_workers,
+                                    ratio=self.args.ratio, shuffle=False, flip=False)
+        self.testloader = get_data(self.args.data_dir, self.args.dataset, self.args.img_size,
+                                   use_cache=self.args.use_cache, save_cache=self.args.save_cache,
+                                   split="test", regime=self.args.regime, subset=self.args.subset,
+                                   batch_size=self.args.batch_size, drop_last=False, num_workers=self.args.num_workers,
+                                   ratio=self.args.ratio, shuffle=False, flip=False)
 
         print('Building model')
-        params = args.__dict__
         print(args)
-        params['num_meta'] = 9 if 'RAVEN' in self.args.dataset else 12
-        self.use_meta = 0 if args.meta_beta == 0 else params['num_meta']
+        num_meta = 9 if 'RAVEN' in self.args.dataset else 12
+        self.use_meta = 0 if args.meta_beta == 0 else num_meta
 
-        assert args.model_name == 'mrnet'
-        from networks.mrnet import MRNet
-        self.model = MRNet(use_meta=self.use_meta, dropout=args.dropout, force_bias=args.force_bias,
-                           reduce_func=args.r_func, levels=args.levels, do_contrast=args.contrast,
-                           multihead=args.multihead)
-
-        if self.args.cuda:
-            self.model.cuda()
+        self.model = MRNet(
+            use_meta=self.use_meta,
+            dropout=args.dropout,
+            force_bias=args.force_bias,
+            reduce_func=args.r_func,
+            levels=args.levels,
+            multihead=args.multihead,
+        )
+        self.model.cuda()
 
         self.optimizer = optim.Adam([param for param in self.model.parameters() if param.requires_grad],
                                     self.args.lr, betas=(self.args.beta1, self.args.beta2), eps=self.args.epsilon,
@@ -85,16 +90,18 @@ class Trainer:
         if args.recovery:
             ckpt_file_path = os.path.join(self.save_path, 'model.pth')
             print(f'Loading existing checkpoint from {ckpt_file_path}')
-            state_dict = self.model.state_dict()
             new_state_dict = torch.load(ckpt_file_path, map_location=lambda storage, loc: storage)
-            for key, val in new_state_dict.items():
-                state_dict[key] = val
-            self.model.load_state_dict(state_dict)
+            if args.recovery_strict:
+                self.model.load_state_dict(new_state_dict)
+            else:
+                state_dict = self.model.state_dict()
+                for key, val in new_state_dict.items():
+                    state_dict[key] = val
+                self.model.load_state_dict(state_dict)
 
         if self.args.loss_func == 'contrast':
             self.criterion = lambda x, y, reduction='mean': criteria.contrast_loss(x, y, reduction, args.weighted_loss)
         elif self.args.loss_func == 'ce':
-            import torch.nn as nn
             self.criterion = nn.CrossEntropyLoss()
         if self.use_meta:
             self.criterion_meta = criteria.type_loss
@@ -165,14 +172,11 @@ class Trainer:
             loss.backward()
             self.optimizer.step()
 
+        print(f"Train Avg Loss: {loss_avg / counter:.6f}", end="")
         if self.use_meta:
-            print("Epoch {}, Train Avg Loss: {:.6f} META: {:.6f}, Train Avg Acc: {:.4f}".format(
-                epoch, loss_avg / float(counter), loss_meta_avg / float(counter), acc_avg / float(counter)))
-        else:
-            print("Epoch {}, Train Avg Loss: {:.6f}, Train Avg Acc: {:.4f}".format(
-                epoch, loss_avg / float(counter), acc_avg / float(counter)))
-        if self.args.multihead:
-            print(f'Multihead: {[x / float(counter) for x in acc_multihead_avg]}')
+            print(f", META: {loss_meta_avg / counter:.6f}", end="")
+        print(f", Train Avg Acc: {acc_avg / counter:.4f}", end="")
+        print(f", Multihead: {[x / counter for x in acc_multihead_avg]}" if self.args.multihead else "")
 
         return loss_avg / float(counter), acc_avg / float(counter)
 
@@ -223,15 +227,11 @@ class Trainer:
             if acc_regime is not None:
                 update_acc_regime(self.args.dataset, acc_regime, model_output, target, structure_encoded, data_file)
 
-        if counter > 0:
-            if self.use_meta:
-                print("Epoch {}, Valid Avg Loss: {:.6f} META {:.6f}, Valid Avg Acc: {:.4f}".format(
-                    epoch, loss_avg / float(counter), loss_meta_avg / float(counter), acc_avg / float(counter)))
-            else:
-                print("Epoch {}, Valid Avg Loss: {:.6f}, Valid Avg Acc: {:.4f}".format(
-                    epoch, loss_avg / float(counter), acc_avg / float(counter)))
-            if self.args.multihead:
-                print(f'Multihead: {[x / float(counter) for x in acc_multihead_avg]}')
+        print(f"Valid -- Avg Loss: {loss_avg / counter:.6f}", end="")
+        if self.use_meta:
+            print(f", META: {loss_meta_avg / counter:.6f}", end="")
+        print(f", Avg Acc: {acc_avg / counter:.4f}", end="")
+        print(f", Multihead: {[x / counter for x in acc_multihead_avg]}" if self.args.multihead else "")
 
         if acc_regime is not None:
             for key in acc_regime.keys():
@@ -290,15 +290,11 @@ class Trainer:
             if acc_regime is not None:
                 update_acc_regime(self.args.dataset, acc_regime, model_output, target, structure_encoded, data_file)
 
-        if counter > 0:
-            if self.use_meta:
-                print("Epoch {}, Test  Avg Loss: {:.6f} META {:.6f}, Test  Avg Acc: {:.4f}".format(
-                    epoch, loss_avg / float(counter), loss_meta_avg / float(counter), acc_avg / float(counter)))
-            else:
-                print("Epoch {}, Test  Avg Loss: {:.6f}, Test  Avg Acc: {:.4f}".format(
-                    epoch, loss_avg / float(counter), acc_avg / float(counter)))
-            if self.args.multihead:
-                print(f'Multihead: {[x / float(counter) for x in acc_multihead_avg]}')
+        print(f"Test -- Avg Loss: {loss_avg / counter:.6f}", end="")
+        if self.use_meta:
+            print(f", META: {loss_meta_avg / counter:.6f}", end="")
+        print(f", Avg Acc: {acc_avg / counter:.4f}", end="")
+        print(f", Multihead: {[x / counter for x in acc_multihead_avg]}" if self.args.multihead else "")
 
         if acc_regime is not None:
             for key in acc_regime.keys():
@@ -310,7 +306,7 @@ class Trainer:
 
         return loss_avg / float(counter), acc_avg / float(counter), acc_regime
 
-    def evaluate(self, subset):
+    def evaluate(self, split):
         self.model.eval()
 
         counter = 0
@@ -321,13 +317,16 @@ class Trainer:
 
         acc_regime = init_acc_regime(self.args.dataset)
 
-        if subset == 'train':
+        if split == 'train':
             loader = self.trainloader
-        elif subset == 'val':
+        elif split == 'val':
             loader = self.validloader
-        else:
+        elif split == 'test':
             loader = self.testloader
-        for batch_data in tqdm(loader, subset):
+        else:
+            raise ValueError(f"split={split} is not supported")
+
+        for batch_data in tqdm(loader, desc=split):
             counter += 1
 
             image, target, meta_target, structure_encoded, data_file = batch_data
@@ -363,15 +362,11 @@ class Trainer:
             if acc_regime is not None:
                 update_acc_regime(self.args.dataset, acc_regime, model_output, target, structure_encoded, data_file)
 
-        if counter > 0:
-            if self.use_meta:
-                print("{} - Avg Loss: {:.6f} META {:.6f}, Test  Avg Acc: {:.4f}".format(
-                    subset, loss_avg / float(counter), loss_meta_avg / float(counter), acc_avg / float(counter)))
-            else:
-                print("{} - Avg Loss: {:.6f}, Test  Avg Acc: {:.4f}".format(
-                    subset, loss_avg / float(counter), acc_avg / float(counter)))
-            if self.args.multihead:
-                print(f'Multihead: {[x / float(counter) for x in acc_multihead_avg]}')
+        print(f"{split} -- Avg Loss: {loss_avg / counter:.6f}", end="")
+        if self.use_meta:
+            print(f", META: {loss_meta_avg / counter:.6f}", end="")
+        print(f", Avg Acc: {acc_avg / counter:.4f}", end="")
+        print(f", Multihead: {[x / counter for x in acc_multihead_avg]}" if self.args.multihead else "")
 
         if acc_regime is not None:
             for key in acc_regime.keys():

@@ -21,11 +21,11 @@ def to_tensor(sample):
 
 
 class RAVENDataset(Dataset):
-    def __init__(self, root, cache_root, dataset_type=None, image_size=80, transform=None,
+    def __init__(self, root, cache_root, split=None, image_size=80, transform=None,
                  use_cache=False, save_cache=False, in_memory=False, subset=None, flip=False, permute=False):
         self.root = root
         self.cache_root = cache_root if cache_root is not None else root
-        self.dataset_type = dataset_type
+        self.split = split
         self.image_size = image_size
         self.transform = transform
         self.use_cache = use_cache
@@ -33,13 +33,16 @@ class RAVENDataset(Dataset):
         self.flip = flip
         self.permute = permute
 
-        if self.use_cache:
-            self.cached_dir = os.path.join(self.cache_root, 'cache', f'{self.dataset_type}_{self.image_size}')
+        def _set_paths():
+            if os.path.isdir(os.path.join(self.root, 'data')):
+                self.data_dir = os.path.join(self.root, 'data')
+            else:
+                self.data_dir = self.root
 
-        if self.root is not None:
-            self.data_dir = os.path.join(self.root, 'data')
-        else:
-            self.data_dir = self.cached_dir
+            if self.use_cache:
+                self.cached_dir = os.path.join(self.cache_root, 'cache', f'{self.split}_{self.image_size}')
+
+        _set_paths()
 
         if subset is not None:
             subsets = [subset]
@@ -49,7 +52,7 @@ class RAVENDataset(Dataset):
 
         self.file_names = []
         for i in subsets:
-            file_names = [os.path.basename(f) for f in glob.glob(os.path.join(self.data_dir, i, f"*{dataset_type}.npz"))]
+            file_names = [os.path.basename(f) for f in glob.glob(os.path.join(self.data_dir, i, f"*{split}.npz"))]
             file_names.sort()
             self.file_names += [os.path.join(i, f) for f in file_names]
 
@@ -88,15 +91,13 @@ class RAVENDataset(Dataset):
     def load_cached_file(self, file):
         try:
             data = np.load(file)
-            image = data['image']
-            return image, data
+            return data
         except:
-            raise ValueError(f'Error - Could not open existing file {file}')
-            return None, None
+            print(f'Error - Could not open existing file {file}')
+            return None
 
-    def save_cached_file(self, file, image, data):
+    def save_cached_file(self, file, data):
         os.makedirs(os.path.dirname(file), exist_ok=True)
-        data['image'] = image
         np.savez_compressed(file, **data)
 
     def __len__(self):
@@ -106,45 +107,54 @@ class RAVENDataset(Dataset):
         data_file = self.file_names[idx]
         if self.memory is not None and self.memory[idx] is not None:
             resize_image, data = self.memory[idx]
+            return resize_image, data, data_file
         else:
             no_cache = True
             # Try to load a cached file for faster fetching
             if self.use_cache:
                 cached_path = os.path.join(self.cached_dir, data_file)
                 if os.path.isfile(cached_path):
-                    resize_image, data = self.load_cached_file(cached_path)
-                    no_cache = data is None
+                    data = self.load_cached_file(cached_path)
+                    if data is not None:
+                        resize_image = data['image'].astype(np.uint8)
+                        return resize_image, data, data_file
+
                 if no_cache and not self.save_cache:
-                    raise ValueError('Error - Expected to load cached data but cache was not found')
+                    warnings.warn(f'Error - Expected to load cached data "{data_file}" but cache was not found')
+
             # Load original file otherwise
-            if no_cache:
-                data_path = os.path.join(self.data_dir, data_file)
+            data_path = os.path.join(self.data_dir, data_file)
+            try:
                 data = np.load(data_path)
+            except:
+                print(f"Cannot load file {data_file}")
+                raise
 
-                image = data["image"].reshape(16, 160, 160)
-                if self.image_size != 160:
-                    resize_image = []
-                    for idx in range(0, 16):
-                        resize_image.append(
-                            skimage.transform.resize(image[idx, :, :], (self.image_size, self.image_size),
-                                                     order=1, preserve_range=True, anti_aliasing=True))
-                    resize_image = np.stack(resize_image, axis=0).astype(np.uint8)
+            image = data["image"].reshape(16, 160, 160)
+            if self.image_size != 160:
+                resize_image = []
+                for idx in range(0, 16):
+                    resize_image.append(
+                        skimage.transform.resize(image[idx, :, :], (self.image_size, self.image_size),
+                                                 order=1, preserve_range=True, anti_aliasing=True))
+                resize_image = np.stack(resize_image, axis=0).astype(np.uint8)
+            else:
+                resize_image = image.astype(np.uint8)
+
+            # Optional: save a cached file for further use
+            if self.use_cache:
+                if self.save_cache:
+                    os.makedirs(os.path.dirname(cached_path), exist_ok=True)
+                    d = {'image': resize_image,
+                         'target': data["target"],
+                         'meta_target': data["meta_target"],
+                         'structure': data["structure"],
+                         'meta_structure': data["meta_structure"],
+                         'meta_matrix': data["meta_matrix"]
+                         }
+                    self.save_cached_file(cached_path, d)
                 else:
-                    resize_image = image.astype(np.uint8)
-
-                # Optional: save a cached file for further use
-                if self.use_cache:
-                    if self.save_cache:
-                        os.makedirs(os.path.dirname(cached_path), exist_ok=True)
-                        d = {'target': data["target"],
-                             'meta_target': data["meta_target"],
-                             'structure': data["structure"],
-                             'meta_structure': data["meta_structure"],
-                             'meta_matrix': data["meta_matrix"]
-                             }
-                        self.save_cached_file(cached_path, resize_image, d)
-                    else:
-                        raise ValueError(f'Error cache file {cached_path} not found')
+                    raise ValueError(f'Error cache file {cached_path} not found')
 
         return resize_image, data, data_file
 

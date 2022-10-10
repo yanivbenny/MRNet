@@ -22,14 +22,22 @@ class Reshape(nn.Module):
 
 
 class MRNet(nn.Module):
-    def __init__(self, use_meta=False, row_col=True, dropout=False, do_contrast=False, force_bias=False,
-                 relu_before_reduce=False, reduce_func='sum', levels='111', multihead=False):
+    def __init__(
+            self,
+            use_meta=False,
+            row_col=True,
+            dropout=False,
+            force_bias=False,
+            relu_before_reduce=False,
+            reduce_func='sum',
+            levels='111',
+            multihead=False,
+            big=False,
+    ):
         super(MRNet, self).__init__()
         self.use_meta = use_meta
-        self.do_contrast = do_contrast
         self.relu_before_reduce = relu_before_reduce
         self.levels = levels
-        print(f'CONTRAST: {self.do_contrast}')
         print(f'LEVELS: {self.levels}')
 
         if dropout:
@@ -241,14 +249,16 @@ class MRNet(nn.Module):
 
         row1_features = input_features[:, 0:3, :, :, :]  # N, 3, 64, 20, 20
         row2_features = input_features[:, 3:6, :, :, :]  # N, 3, 64, 20, 20
-        row3_pre = input_features[:, 6:8, :, :, :].unsqueeze(1).expand(N, K0, 2, C, H,
-                                                                       W)  # N, 2, 64, 20, 20 -> N, 1, 2, 64, 20, 20 -> N, 8, 2, 64, 20, 20
+        # N, 2, 64, 20, 20 -> N, 1, 2, 64, 20, 20 -> N, 8, 2, 64, 20, 20
+        row3_pre = input_features[:, 6:8, :, :, :].unsqueeze(1).expand(N, K0, 2, C, H, W)
+        # N, 8, 2, 64, 20, 20 - > N, 8, 3, 64, 20, 20
         row3_features = torch.cat((row3_pre, choices_features), dim=2).view(N * K0, 3, C, H, W)
 
         col1_features = input_features[:, 0:8:3, :, :, :]  # N, 3, 64, 20, 20
         col2_features = input_features[:, 1:8:3, :, :, :]  # N, 3, 64, 20, 20
-        col3_pre = input_features[:, 2:8:3, :, :, :].unsqueeze(1).expand(N, K0, 2, C, H,
-                                                                         W)  # N, 2, 64, 20, 20 -> N, 1, 2, 64, 20, 20 -> N, 8, 2, 64, 20, 20
+        # N, 2, 64, 20, 20 -> N, 1, 2, 64, 20, 20 -> N, 8, 2, 64, 20, 20
+        col3_pre = input_features[:, 2:8:3, :, :, :].unsqueeze(1).expand(N, K0, 2, C, H, W)
+        # N, 8, 2, 64, 20, 20 - > N, 8, 3, 64, 20, 20
         col3_features = torch.cat((col3_pre, choices_features), dim=2).view(N * K0, 3, C, H, W)
 
         return row1_features, row2_features, row3_features, col1_features, col2_features, col3_features
@@ -334,7 +344,7 @@ class MRNet(nn.Module):
             col_feats_mid = self.g_function_mid(torch.cat((col1_cat_mid, col2_cat_mid, col3_cat_mid), dim=0))
             col_feats_mid = self.bn_col_mid(self.conv_col_mid(col_feats_mid))
 
-            reduced_feats_mid = self.reduce(row_feats_mid, col_feats_mid, N, K0)  # N, 8, 256, 5, 5
+            reduced_feats_mid = self.reduce(row_feats_mid, col_feats_mid, N, K0)  # N, 8, 128, 10, 10
 
         # Low res
         if self.levels[2] == '1':
@@ -354,12 +364,12 @@ class MRNet(nn.Module):
         # High
         if self.levels[0] == '1':
             res1_in_high = reduced_feats_high
-            if self.do_contrast:
-                res1_in_high = res1_in_high - res1_in_high.mean(dim=1).unsqueeze(1)
+            # if self.do_contrast:
+            #     res1_in_high = res1_in_high - res1_in_high.mean(dim=1).unsqueeze(1)
             res1_out_high = self.res1_high(res1_in_high.view(N * K0, self.high_dim, 20, 20))
             res2_in_high = res1_out_high.view(N, K0, 2 * self.high_dim, 10, 10)
-            if self.do_contrast:
-                res2_in_high = res2_in_high - res2_in_high.mean(dim=1).unsqueeze(1)
+            # if self.do_contrast:
+            #     res2_in_high = res2_in_high - res2_in_high.mean(dim=1).unsqueeze(1)
             out_high = self.res2_high(res2_in_high.view(N * K0, 2 * self.high_dim, 10, 10))
             final_high = self.avgpool(out_high)
             final_high = final_high.view(-1, self.mlp_dim_high)
@@ -369,12 +379,12 @@ class MRNet(nn.Module):
         # Mid
         if self.levels[1] == '1':
             res1_in_mid = reduced_feats_mid
-            if self.do_contrast:
-                res1_in_mid = res1_in_mid - res1_in_mid.mean(dim=1).unsqueeze(1)
+            # if self.do_contrast:
+            #     res1_in_mid = res1_in_mid - res1_in_mid.mean(dim=1).unsqueeze(1)
             res1_out_mid = self.res1_mid(res1_in_mid.view(N * K0, self.mid_dim, 5, 5))
             res2_in_mid = res1_out_mid.view(N, K0, 2 * self.mid_dim, 3, 3)
-            if self.do_contrast:
-                res2_in_mid = res2_in_mid - res2_in_mid.mean(dim=1).unsqueeze(1)
+            # if self.do_contrast:
+            #     res2_in_mid = res2_in_mid - res2_in_mid.mean(dim=1).unsqueeze(1)
             out_mid = self.res2_mid(res2_in_mid.view(N * K0, 2 * self.mid_dim, 3, 3))
             final_mid = self.avgpool(out_mid)
             final_mid = final_mid.view(-1, self.mlp_dim_mid)
@@ -384,12 +394,12 @@ class MRNet(nn.Module):
         # Low
         if self.levels[2] == '1':
             res1_in_low = reduced_feats_low
-            if self.do_contrast:
-                res1_in_low = res1_in_low - res1_in_low.mean(dim=1).unsqueeze(1)
+            # if self.do_contrast:
+            #     res1_in_low = res1_in_low - res1_in_low.mean(dim=1).unsqueeze(1)
             res1_out_low = self.res1_low(res1_in_low.view(N * K0, self.low_dim, 1, 1))
             res2_in_low = res1_out_low.view(N, K0, self.mlp_dim_low, 1, 1)
-            if self.do_contrast:
-                res2_in_low = res2_in_low - res2_in_low.mean(dim=1).unsqueeze(1)
+            # if self.do_contrast:
+            #     res2_in_low = res2_in_low - res2_in_low.mean(dim=1).unsqueeze(1)
             out_low = self.res2_low(res2_in_low.view(N * K0, self.mlp_dim_low, 1, 1))
             final_low = self.avgpool(out_low)
             final_low = final_low.view(-1, self.mlp_dim_low)
@@ -400,15 +410,17 @@ class MRNet(nn.Module):
         # MLP
         out = self.mlp(final)
 
-        out_meta = None
         if self.use_meta:
             meta_pred = self.mlp_meta(final)
             out_meta = meta_pred.view(-1, K0, meta_pred.shape[1])
+        else:
+            out_meta = None
 
-        out_multihead = None
         if self.multihead:
             out_multihead = [self.mlp_high(final_high).view(-1, K0),
                              self.mlp_mid(final_mid).view(-1, K0),
                              self.mlp_low(final_low).view(-1, K0)]
+        else:
+            out_multihead = None
 
         return out.view(-1, K0), out_meta, out_multihead
