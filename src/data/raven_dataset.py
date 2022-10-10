@@ -49,7 +49,7 @@ class RAVENDataset(Dataset):
 
         self.file_names = []
         for i in subsets:
-            file_names = [os.path.basename(f) for f in glob.glob(os.path.join(self.data_dir, i, "*.npz"))]
+            file_names = [os.path.basename(f) for f in glob.glob(os.path.join(self.data_dir, i, f"*{dataset_type}.npz"))]
             file_names.sort()
             self.file_names += [os.path.join(i, f) for f in file_names]
 
